@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>NDX五因子量化定投模型</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg-deep: #070c1f;
+            --bg-card: rgba(14, 21, 45, 0.85);
+            --bg-card2: rgba(20, 28, 55, 0.6);
+            --border: rgba(80, 120, 200, 0.15);
+            --text-primary: #e8eaf6;
+            --text-secondary: #7986ab;
+            --text-muted: #4a5580;
+            --accent-blue: #4facfe;
+            --accent-cyan: #00f2fe;
+            --accent-green: #4ade80;
+            --accent-yellow: #fbbf24;
+            --accent-orange: #fb923c;
+            --accent-red: #f87171;
+            --accent-purple: #a78bfa;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: var(--bg-deep);
+            background-image:
+                radial-gradient(ellipse at 20% 20%, rgba(79,172,254,0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(168,85,247,0.05) 0%, transparent 50%);
+            min-height: 100vh;
+            color: var(--text-primary);
+        }
+        .container { max-width: 1280px; margin: 0 auto; padding: 20px 16px; }
+
+        /* ── HEADER ── */
+        .header {
+            text-align: center;
+            padding: 28px 0 24px;
+        }
+        .header h1 {
+            font-size: 22px;
+            font-weight: 700;
+            background: linear-gradient(90deg, #4facfe, #00f2fe);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            margin-bottom: 4px;
+        }
+        .header .en { font-size: 12px; color: var(--text-muted); letter-spacing: 0.5px; margin-bottom: 12px; }
+        .header .time-row {
+            display: flex; justify-content: center; align-items: center; gap: 12px;
+            font-size: 13px; color: var(--text-secondary);
+        }
+        .live-badge {
+            display: inline-flex; align-items: center; gap: 5px;
+            background: rgba(74,222,128,0.12); border: 1px solid rgba(74,222,128,0.3);
+            color: #4ade80; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+        }
+        .live-dot { width:7px; height:7px; background:#4ade80; border-radius:50%; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.85)} }
+
+        /* ── INDEX HERO ── */
+        .index-hero {
+            background: linear-gradient(135deg, rgba(14,21,45,0.9) 0%, rgba(10,16,36,0.95) 100%);
+            border: 1px solid var(--border);
+            border-top: 1px solid rgba(79,172,254,0.25);
+            border-radius: 20px;
+            padding: 32px 24px;
+            text-align: center;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 40px rgba(0,0,0,0.5);
+            position: relative; overflow: hidden;
+        }
+        .index-hero::before {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(79,172,254,0.5), transparent);
+        }
+        .index-hero-label { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+        .index-hero-value {
+            font-size: 60px; font-weight: 800; letter-spacing: -2px;
+            font-variant-numeric: tabular-nums;
+            background: linear-gradient(180deg, #fff 0%, #b8c5e8 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .index-hero-change {
+            margin-top: 8px; display: inline-flex; align-items: center; gap: 8px;
+            font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums;
+        }
+        .down-color { color: var(--accent-green); }
+        .up-color { color: var(--accent-red); }
+        .sub-meta { margin-top: 14px; display:flex; justify-content:center; gap:28px; flex-wrap:wrap; }
+        .sub-meta-item { font-size: 12px; color: var(--text-muted); }
+        .sub-meta-item span { color: var(--text-secondary); font-weight: 500; }
+
+        /* ── GRID ── */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 16px; }
+        @media(max-width:820px) { .grid-2 { grid-template-columns:1fr; } .grid-3 { grid-template-columns:1fr; } }
+        @media(min-width:820px) and (max-width:1100px) { .grid-3 { grid-template-columns:1fr 1fr; } }
+
+        /* ── CARD ── */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 22px;
+            position: relative; overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.35);
+            transition: transform 0.25s, box-shadow 0.25s;
+        }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 8px 36px rgba(0,0,0,0.5); }
+        .card::before {
+            content: ''; position: absolute; top:0; left:0; right:0; height:1px;
+            background: linear-gradient(90deg, transparent, var(--card-accent, rgba(79,172,254,0.4)), transparent);
+        }
+        .card-pe  { --card-accent: rgba(103,103,232,0.5); }
+        .card-vix { --card-accent: rgba(245,87,108,0.5); }
+        .card-trend { --card-accent: rgba(79,172,254,0.5); }
+        .card-macro { --card-accent: rgba(67,233,123,0.5); }
+        .card-drawdown { --card-accent: rgba(250,112,154,0.5); }
+        .card-summary { --card-accent: rgba(255,255,255,0.15); }
+
+        .card-hd { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+        .card-icon {
+            width:42px; height:42px; border-radius:12px;
+            display:flex; align-items:center; justify-content:center;
+            font-size:14px; font-weight:800; flex-shrink:0;
+        }
+        .ci-pe       { background: linear-gradient(135deg,#6366f1,#8b5cf6); }
+        .ci-vix      { background: linear-gradient(135deg,#f5576c,#f093fb); }
+        .ci-trend    { background: linear-gradient(135deg,#4facfe,#00f2fe); }
+        .ci-macro    { background: linear-gradient(135deg,#43e97b,#38f9d7); }
+        .ci-drawdown { background: linear-gradient(135deg,#fa709a,#fee140); }
+        .ci-sum      { background: linear-gradient(135deg,#667eea,#764ba2); }
+
+        .card-hd h3 { font-size:15px; font-weight:600; }
+        .card-hd p  { font-size:11px; color:var(--text-muted); letter-spacing:.4px; }
+
+        /* ── SCORE ── */
+        .score-number {
+            font-size: 52px; font-weight: 800; letter-spacing: -1px;
+            font-variant-numeric: tabular-nums;
+            margin-bottom: 4px; line-height: 1;
+        }
+        .score-yellow  { color: var(--accent-yellow); }
+        .score-green   { color: var(--accent-green); }
+        .score-blue    { color: var(--accent-blue); }
+        .score-purple  { color: var(--accent-purple); }
+        .score-orange  { color: var(--accent-orange); }
+
+        /* ── GAUGE BAR ── */
+        .gauge-wrap { margin: 14px 0 10px; }
+        .gauge-bar {
+            width:100%; height:10px;
+            background: linear-gradient(90deg, #ef4444 0%, #f97316 30%, #eab308 55%, #22c55e 100%);
+            border-radius: 5px; position: relative;
+        }
+        .gauge-knob {
+            position: absolute; top: 50%; width: 20px; height: 20px;
+            background: #fff; border-radius: 50%; transform: translate(-50%, -50%);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+            transition: left 0.6s cubic-bezier(.34,1.56,.64,1);
+        }
+        .gauge-knob::after {
+            content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+            width:10px; height:10px; background:#3b82f6; border-radius:50%;
+        }
+        .gauge-ticks { display:flex; justify-content:space-between; margin-top:6px; font-size:11px; color:var(--text-muted); }
+
+        /* ── INFO ROWS ── */
+        .info-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+            font-size: 13px;
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-lbl { color: var(--text-secondary); }
+        .info-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+        .val-yellow { color: var(--accent-yellow); }
+        .val-green  { color: var(--accent-green); }
+        .val-red    { color: var(--accent-red); }
+        .val-blue   { color: var(--accent-blue); }
+
+        /* ── BADGE ── */
+        .badge {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 5px 13px; border-radius: 20px; font-size: 12px; font-weight: 500;
+            margin-top: 14px;
+        }
+        .badge-green  { background:rgba(74,222,128,.15); color:#4ade80; border:1px solid rgba(74,222,128,.25); }
+        .badge-yellow { background:rgba(251,191,36,.15); color:#fbbf24; border:1px solid rgba(251,191,36,.25); }
+        .badge-red    { background:rgba(248,113,113,.15); color:#f87171; border:1px solid rgba(248,113,113,.25); }
+        .badge-orange { background:rgba(251,146,60,.15); color:#fb923c; border:1px solid rgba(251,146,60,.25); }
+
+        /* ── VIX LEVELS ── */
+        .vix-scale { display:flex; flex-direction:column; gap:6px; margin:14px 0; }
+        .vix-row {
+            display:flex; align-items:center; justify-content:space-between;
+            padding: 7px 12px; border-radius: 8px; font-size: 12px;
+            border: 1px solid transparent; transition: all 0.3s;
+        }
+        .vix-row .range { font-weight:600; min-width:60px; }
+        .vix-row .label { flex:1; text-align:center; }
+        .vix-row .indicator { width:8px; height:8px; border-radius:50%; }
+
+        .vix-lv1 { background:rgba(59,130,246,.1); color:#60a5fa; }
+        .vix-lv1 .indicator { background:#60a5fa; }
+        .vix-lv2 { background:rgba(34,197,94,.1); color:#4ade80; }
+        .vix-lv2 .indicator { background:#4ade80; }
+        .vix-lv3 { background:rgba(234,179,8,.1); color:#fbbf24; }
+        .vix-lv3 .indicator { background:#fbbf24; }
+        .vix-lv4 { background:rgba(249,115,22,.1); color:#fb923c; }
+        .vix-lv4 .indicator { background:#fb923c; }
+        .vix-lv5 { background:rgba(239,68,68,.1); color:#f87171; }
+        .vix-lv5 .indicator { background:#f87171; }
+        .vix-lv6 { background:rgba(153,27,27,.2); color:#fca5a5; }
+        .vix-lv6 .indicator { background:#fca5a5; }
+
+        .vix-row.active-row {
+            border-color: currentColor !important;
+            box-shadow: 0 0 12px rgba(255,255,255,0.15);
+            font-weight: 700;
+        }
+        .vix-row.active-row .indicator { animation: pulse 1s infinite; }
+
+        /* ── PROGRESS BARS ── */
+        .prog-section { margin-top: 14px; }
+        .prog-item { margin-bottom: 14px; }
+        .prog-hd { display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px; }
+        .prog-hd .prog-lbl { color: var(--text-secondary); }
+        .prog-hd .prog-val { font-weight:600; font-variant-numeric: tabular-nums; }
+        .prog-track {
+            height: 8px; background: rgba(255,255,255,.08); border-radius: 4px; overflow:hidden;
+        }
+        .prog-fill {
+            height: 100%; border-radius: 4px; transition: width 1.2s ease;
+        }
+        .fill-emerald { background: linear-gradient(90deg, #10b981, #34d399); }
+        .fill-lime    { background: linear-gradient(90deg, #84cc16, #a3e635); }
+        .fill-yellow  { background: linear-gradient(90deg, #d97706, #fbbf24); }
+
+        /* ── SUMMARY CARD ── */
+        .summary-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 16px;
+        }
+        @media(max-width:700px) { .summary-grid { grid-template-columns: 1fr 1fr; } }
+        .sum-item {
+            background: rgba(255,255,255,.03); border-radius: 12px; padding: 16px 12px;
+            text-align: center; border: 1px solid rgba(255,255,255,.05);
+        }
+        .sum-item h4 { font-size:11px; color:var(--text-muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px; }
+        .sum-item .sv { font-size:32px; font-weight:800; line-height:1; margin-bottom:4px; font-variant-numeric:tabular-nums; }
+        .sum-item .ss { font-size:11px; color:var(--text-muted); }
+
+        /* ── SCORE DIAL ── */
+        .dial-wrap { display:flex; align-items:center; justify-content:center; margin: 8px 0 14px; }
+        .dial-svg { filter: drop-shadow(0 0 8px rgba(251,191,36,0.3)); }
+
+        /* ── AI INSIGHT ── */
+        .ai-card {
+            background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(168,85,247,0.08));
+            border: 1px solid rgba(139,92,246,.3);
+            border-radius: 16px; padding: 22px; margin-top: 16px;
+        }
+        .ai-hd { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+        .ai-hd .ai-icon {
+            width:34px; height:34px; border-radius:8px;
+            background: linear-gradient(135deg,#6366f1,#a855f7);
+            display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0;
+        }
+        .ai-hd h4 { font-size:14px; color: var(--accent-purple); font-weight:600; }
+        .ai-hd .ai-status { margin-left:auto; font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:4px; }
+        .ai-text { font-size:13.5px; line-height:1.85; color:#c4cce8; }
+        .ai-text strong { color: var(--accent-yellow); }
+        .ai-text .green { color: var(--accent-green); }
+        .ai-text .red { color: var(--accent-red); }
+        .ai-cursor { display:inline-block; width:2px; height:14px; background:var(--accent-purple); animation: blink 1s step-end infinite; vertical-align:middle; }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+        /* ── MINI CHART ── */
+        .mini-chart { height: 90px; margin: 10px 0; }
+
+        /* ── FLASH UPDATE ── */
+        @keyframes flashUpdate { 0%{background:rgba(79,172,254,0.15)} 100%{background:transparent} }
+        .flash { animation: flashUpdate 0.8s ease; }
+
+        /* ── FOOTER ── */
+        .footer { text-align:center; padding:24px 0 16px; color:var(--text-muted); font-size:11px; line-height:1.8; }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- HEADER -->
+    <div class="header">
+        <h1>纳斯达克100指数（NDX）五因子量化定投模型</h1>
+        <div class="en">NASDAQ 100 Index Five-Factor Quantitative Investing Model</div>
+        <div class="time-row">
+            <div class="live-badge"><div class="live-dot"></div>LIVE</div>
+            <span id="clock">2026年03月31日 · 17:10:17</span>
+            <span style="font-size:11px;color:var(--text-muted)">·</span>
+            <span id="data-status" style="font-size:11px;color:#fb923c;">连接中...</span>
+            <span style="font-size:11px;color:var(--text-muted)">· 更新</span>
+            <span id="last-update" style="font-size:11px;color:var(--text-secondary);">--:--:--</span>
+        </div>
+    </div>
+
+    <!-- INDEX HERO -->
+    <div class="index-hero">
+        <div class="index-hero-label">NDX指数 · NASDAQ 100</div>
+        <div class="index-hero-value" id="ndx-price">22,953.378</div>
+        <div class="index-hero-change">
+            <span id="ndx-delta" class="down-color">▼ 179.036 (-0.78%)</span>
+        </div>
+        <div class="sub-meta">
+            <div class="sub-meta-item">最新PE <span>31.34</span></div>
+            <div class="sub-meta-item">支撑位 <span>22,000</span></div>
+            <div class="sub-meta-item">距高点 <span class="down-color">↓12.33%</span></div>
+            <div class="sub-meta-item">更新 <span>20260331</span></div>
+        </div>
+    </div>
+
+    <!-- ROW 1: Summary Card full width -->
+    <div class="card card-summary" style="margin-bottom:16px;">
+        <div class="card-hd">
+            <div class="card-icon ci-sum">综合</div>
+            <div>
+                <h3>五因子综合评分</h3>
+                <p>FIVE-FACTOR COMPOSITE SCORE</p>
+            </div>
+        </div>
+
+        <!-- Dial -->
+        <div class="dial-wrap">
+            <svg class="dial-svg" width="200" height="115" viewBox="0 0 200 115">
+                <defs>
+                    <linearGradient id="arcGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stop-color="#ef4444"/>
+                        <stop offset="40%" stop-color="#f97316"/>
+                        <stop offset="65%" stop-color="#eab308"/>
+                        <stop offset="100%" stop-color="#22c55e"/>
+                    </linearGradient>
+                </defs>
+                <!-- background arc -->
+                <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="16" stroke-linecap="round"/>
+                <!-- colored arc -->
+                <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#arcGrad)" stroke-width="16" stroke-linecap="round" stroke-dasharray="251" stroke-dashoffset="0" opacity="0.85"/>
+                <!-- needle -->
+                <g id="needle-group" transform="rotate(-90 100 100)">
+                    <line x1="100" y1="100" x2="100" y2="28" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.9"/>
+                    <circle cx="100" cy="100" r="7" fill="#1e293b" stroke="white" stroke-width="2"/>
+                </g>
+                <!-- score text -->
+                <text x="100" y="88" text-anchor="middle" fill="#fbbf24" font-size="28" font-weight="800" font-family="monospace">69</text>
+                <text x="100" y="108" text-anchor="middle" fill="#7986ab" font-size="11">综合得分</text>
+                <text x="22" y="113" fill="#5a6a8a" font-size="10">0</text>
+                <text x="95" y="16" fill="#5a6a8a" font-size="10">50</text>
+                <text x="170" y="113" fill="#5a6a8a" font-size="10">100</text>
+            </svg>
+        </div>
+
+        <div class="summary-grid">
+            <div class="sum-item">
+                <h4>综合得分</h4>
+                <div class="sv score-yellow" id="s-total">69</div>
+                <div class="ss">/ 100 分</div>
+            </div>
+            <div class="sum-item">
+                <h4>市场评级</h4>
+                <div class="sv" style="font-size:18px;color:#fbbf24;margin-top:6px;">中性偏积极</div>
+                <div class="ss">Neutral Positive</div>
+            </div>
+            <div class="sum-item">
+                <h4>定投建议</h4>
+                <div class="sv score-green">1.2×</div>
+                <div class="ss">Slightly Enhanced</div>
+            </div>
+            <div class="sum-item">
+                <h4>市场状态</h4>
+                <div class="sv" style="font-size:14px;color:#fb923c;margin-top:8px;">技术性修正</div>
+                <div class="ss">↓ 12.33% from ATH</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ROW 2: PE + VIX -->
+    <div class="grid-2">
+
+        <!-- PE Card -->
+        <div class="card card-pe">
+            <div class="card-hd">
+                <div class="card-icon ci-pe">PE</div>
+                <div>
+                    <h3>估值因子</h3>
+                    <p>VALUATION FACTOR</p>
+                </div>
+            </div>
+            <div class="score-number score-yellow" id="s-pe">66</div>
+            <div class="gauge-wrap">
+                <div class="gauge-bar">
+                    <div class="gauge-knob" id="gauge-pe" style="left:66%"></div>
+                </div>
+                <div class="gauge-ticks"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+            </div>
+            <div class="info-row"><span class="info-lbl">市盈率 (PE TTM)</span><span class="info-val val-yellow" id="pe-ttm">32.09</span></div>
+            <div class="info-row"><span class="info-lbl">近5年市盈率均值</span><span class="info-val val-yellow">27.28</span></div>
+            <div class="info-row"><span class="info-lbl">最新PE</span><span class="info-val val-yellow">31.34</span></div>
+            <div class="info-row"><span class="info-lbl">30以下极具性价比</span><span class="info-val" style="color:#5a6a8a">参考值</span></div>
+            <div class="badge badge-red">⚠ 高估值 · 安全边际偏低</div>
+        </div>
+
+        <!-- VIX Card -->
+        <div class="card card-vix">
+            <div class="card-hd">
+                <div class="card-icon ci-vix">VIX</div>
+                <div>
+                    <h3>情绪因子</h3>
+                    <p>SENTIMENT FACTOR</p>
+                </div>
+            </div>
+            <div class="score-number score-green" id="s-vix">75</div>
+            <div class="gauge-wrap">
+                <div class="gauge-bar">
+                    <div class="gauge-knob" id="gauge-vix" style="left:75%"></div>
+                </div>
+                <div class="gauge-ticks"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+            </div>
+
+            <div class="info-row">
+                <span class="info-lbl">恐慌指数 (VIX) 实时</span>
+                <span class="info-val val-yellow" id="vix-live">30.61</span>
+            </div>
+            <div class="info-row">
+                <span class="info-lbl">25.4月大跌区间</span>
+                <span class="info-val val-red">37.56 ~ 60.13</span>
+            </div>
+
+            <div class="vix-scale">
+                <div class="vix-row vix-lv1"><span class="range">&lt; 15</span><span class="label">市场平静</span><div class="indicator"></div></div>
+                <div class="vix-row vix-lv2"><span class="range">15 – 20</span><span class="label">正常波动</span><div class="indicator"></div></div>
+                <div class="vix-row vix-lv3"><span class="range">&gt; 20</span><span class="label">开始紧张</span><div class="indicator"></div></div>
+                <div class="vix-row vix-lv4 active-row" id="vix-active-row"><span class="range">&gt; 30 ⚡</span><span class="label">剧烈波动</span><div class="indicator"></div></div>
+                <div class="vix-row vix-lv5"><span class="range">&gt; 40</span><span class="label">罕见恐慌</span><div class="indicator"></div></div>
+                <div class="vix-row vix-lv6"><span class="range">&gt; 60</span><span class="label">吓到腿软</span><div class="indicator"></div></div>
+            </div>
+            <div class="badge badge-green">✨ 市场恐慌 · 机会显现</div>
+        </div>
+    </div>
+
+    <!-- ROW 3: Trend + Macro + Drawdown -->
+    <div class="grid-3">
+
+        <!-- Trend -->
+        <div class="card card-trend">
+            <div class="card-hd">
+                <div class="card-icon ci-trend">📈</div>
+                <div>
+                    <h3>趋势因子</h3>
+                    <p>TREND FACTOR</p>
+                </div>
+            </div>
+            <div class="score-number score-blue" id="s-trend">60</div>
+            <div class="gauge-wrap">
+                <div class="gauge-bar">
+                    <div class="gauge-knob" id="gauge-trend" style="left:60%"></div>
+                </div>
+                <div class="gauge-ticks"><span>0</span><span>50</span><span>100</span></div>
+            </div>
+            <div class="mini-chart"><canvas id="trendChart"></canvas></div>
+            <div class="info-row"><span class="info-lbl">MA 20</span><span class="info-val">23,245</span></div>
+            <div class="info-row"><span class="info-lbl">MA 60</span><span class="info-val">23,891</span></div>
+            <div class="info-row"><span class="info-lbl">MA 200</span><span class="info-val val-yellow">24,580</span></div>
+            <div class="badge badge-red">▼ 短期趋势偏弱</div>
+        </div>
+
+        <!-- Macro -->
+        <div class="card card-macro">
+            <div class="card-hd">
+                <div class="card-icon ci-macro">🌍</div>
+                <div>
+                    <h3>宏观因子</h3>
+                    <p>MACRO FACTOR</p>
+                </div>
+            </div>
+            <div class="score-number score-purple" id="s-macro">63</div>
+            <div class="gauge-wrap">
+                <div class="gauge-bar">
+                    <div class="gauge-knob" id="gauge-macro" style="left:63%"></div>
+                </div>
+                <div class="gauge-ticks"><span>0</span><span>50</span><span>100</span></div>
+            </div>
+            <div class="info-row"><span class="info-lbl">美联储利率</span><span class="info-val">4.50%</span></div>
+            <div class="info-row"><span class="info-lbl">10Y美债收益率</span><span class="info-val">4.25%</span></div>
+            <div class="info-row"><span class="info-lbl">美元指数 DXY</span><span class="info-val">103.45</span></div>
+            <div class="info-row"><span class="info-lbl">PCE通胀同比</span><span class="info-val val-yellow">2.5%</span></div>
+            <div class="badge badge-yellow">— 宏观环境中性</div>
+        </div>
+
+        <!-- Drawdown -->
+        <div class="card card-drawdown">
+            <div class="card-hd">
+                <div class="card-icon ci-drawdown">📉</div>
+                <div>
+                    <h3>回撤因子</h3>
+                    <p>DRAWDOWN FACTOR</p>
+                </div>
+            </div>
+            <div class="score-number score-green" id="s-drawdown">81</div>
+            <div class="gauge-wrap">
+                <div class="gauge-bar">
+                    <div class="gauge-knob" id="gauge-drawdown" style="left:81%"></div>
+                </div>
+                <div class="gauge-ticks"><span>0</span><span>50</span><span>100</span></div>
+            </div>
+            <div class="info-row">
+                <span class="info-lbl">距历史最高点</span>
+                <span class="info-val val-green">↓ 12.33%</span>
+            </div>
+            <div class="info-row">
+                <span class="info-lbl">上次大跌回撤 (25.4月)</span>
+                <span class="info-val val-red">↓ 25.56%</span>
+            </div>
+            <div class="info-row">
+                <span class="info-lbl">当前支撑位</span>
+                <span class="info-val val-yellow">22,000</span>
+            </div>
+
+            <div class="prog-section">
+                <div class="prog-item">
+                    <div class="prog-hd">
+                        <span class="prog-lbl">过去1年历史分位</span>
+                        <span class="prog-val val-green">3%</span>
+                    </div>
+                    <div class="prog-track"><div class="prog-fill fill-emerald" style="width:3%"></div></div>
+                </div>
+                <div class="prog-item">
+                    <div class="prog-hd">
+                        <span class="prog-lbl">过去5年历史分位</span>
+                        <span class="prog-val val-yellow">24%</span>
+                    </div>
+                    <div class="prog-track"><div class="prog-fill fill-lime" style="width:24%"></div></div>
+                </div>
+                <div class="prog-item">
+                    <div class="prog-hd">
+                        <span class="prog-lbl">过去10年历史分位</span>
+                        <span class="prog-val">54%</span>
+                    </div>
+                    <div class="prog-track"><div class="prog-fill fill-yellow" style="width:54%"></div></div>
+                </div>
+            </div>
+            <div class="badge badge-green">🎯 已进入性价比击球区间</div>
+        </div>
+    </div>
+
+    <!-- AI INSIGHT -->
+    <div class="ai-card">
+        <div class="ai-hd">
+            <div class="ai-icon">🤖</div>
+            <h4>AI 智能分析报告</h4>
+            <div class="ai-status">
+                <div class="live-dot"></div>
+                <span>实时生成中...</span>
+            </div>
+        </div>
+        <div class="ai-text" id="ai-text"></div>
+    </div>
+
+    <div class="footer">
+        <p>数据来源：腾讯股票 / 东方财富 / 新浪财经（实时接口）· 每15秒自动刷新</p>
+        <p>数据仅供参考，不构成投资建议，投资有风险，入市需谨慎</p>
+    </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  全局数据状态
+// ═══════════════════════════════════════════════════
+const STATE = {
+    ndxPrice: 22953.378,
+    ndxOpen:  23132.414,
+    ndxPrev:  23132.414,
+    ndxHigh:  23200.0,
+    ndxLow:   22850.0,
+    ndxATH:   26160.0,       // 历史最高点（近期高点）
+    vix:      30.61,
+    peTTM:    32.09,
+    pe5yAvg:  27.28,
+    trendChart: null,
+    lastFetch: 0,
+    apiOk:    false,
+};
+
+// ═══════════════════════════════════════════════════
+//  时钟
+// ═══════════════════════════════════════════════════
+function updateClock() {
+    const now = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    document.getElementById('clock').textContent =
+        `${now.getFullYear()}年${pad(now.getMonth()+1)}月${pad(now.getDate())}日 · ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+setInterval(updateClock, 1000); updateClock();
+
+// ═══════════════════════════════════════════════════
+//  JSONP 工具（绕过CORS）
+// ═══════════════════════════════════════════════════
+let _cbIdx = 0;
+function jsonp(url, timeout = 8000) {
+    return new Promise((resolve, reject) => {
+        const cbName = `_jpcb${Date.now()}${_cbIdx++}`;
+        const script = document.createElement('script');
+        const timer = setTimeout(() => {
+            cleanup(); reject(new Error('timeout'));
+        }, timeout);
+        function cleanup() {
+            clearTimeout(timer);
+            delete window[cbName];
+            if (script.parentNode) script.parentNode.removeChild(script);
+        }
+        window[cbName] = (data) => { cleanup(); resolve(data); };
+        script.src = url.replace('CALLBACK', cbName);
+        script.onerror = () => { cleanup(); reject(new Error('script error')); };
+        document.head.appendChild(script);
+    });
+}
+
+// ═══════════════════════════════════════════════════
+//  数据源1：腾讯股票 API（NDX + VIX）
+//  格式：v_rt_us.NDX="...~价格~开盘~最高~最低~前收..."
+// ═══════════════════════════════════════════════════
+async function fetchTencent() {
+    try {
+        const symbols = 'rt_us.NDX,rt_us.VIX';
+        const url = `https://qt.gtimg.cn/q=${symbols}`;
+        const resp = await fetch(url, { cache: 'no-cache' });
+        const text = await resp.text();
+
+        // 解析 NDX
+        const ndxMatch = text.match(/v_rt_us\.NDX="([^"]+)"/);
+        if (ndxMatch) {
+            const parts = ndxMatch[1].split('~');
+            // parts[3]=名称, [4]=当前价, [5]=昨收, [6]=今开, [7]=成交量, [8]=最高, [9]=最低
+            const price = parseFloat(parts[4]);
+            const prev  = parseFloat(parts[5]);
+            const open  = parseFloat(parts[6]) || prev;
+            const high  = parseFloat(parts[8]) || price;
+            const low   = parseFloat(parts[9]) || price;
+            if (price > 0) {
+                STATE.ndxPrice = price;
+                STATE.ndxPrev  = prev > 0 ? prev : STATE.ndxPrev;
+                STATE.ndxOpen  = open > 0 ? open : STATE.ndxOpen;
+                STATE.ndxHigh  = high;
+                STATE.ndxLow   = low;
+                STATE.apiOk    = true;
+            }
+        }
+
+        // 解析 VIX
+        const vixMatch = text.match(/v_rt_us\.VIX="([^"]+)"/);
+        if (vixMatch) {
+            const parts = vixMatch[1].split('~');
+            const vix = parseFloat(parts[4]);
+            if (vix > 0) STATE.vix = vix;
+        }
+        return true;
+    } catch(e) {
+        console.warn('[腾讯API] 失败:', e.message);
+        return false;
+    }
+}
+
+// ═══════════════════════════════════════════════════
+//  数据源2：新浪财经（备用）
+// ═══════════════════════════════════════════════════
+async function fetchSina() {
+    try {
+        // 新浪美股接口
+        const resp = await fetch('https://hq.sinajs.cn/list=gb_$ndx,gb_$vix', { cache: 'no-cache' });
+        const text = await resp.text();
+
+        const ndxM = text.match(/gb_\$ndx="([^"]+)"/i);
+        if (ndxM) {
+            const p = ndxM[1].split(',');
+            const price = parseFloat(p[1]);
+            const prev  = parseFloat(p[2]);
+            if (price > 0) {
+                STATE.ndxPrice = price;
+                if (prev > 0) STATE.ndxPrev = prev;
+                STATE.apiOk = true;
+            }
+        }
+        const vixM = text.match(/gb_\$vix="([^"]+)"/i);
+        if (vixM) {
+            const p = vixM[1].split(',');
+            const v = parseFloat(p[1]);
+            if (v > 0) STATE.vix = v;
+        }
+        return true;
+    } catch(e) {
+        console.warn('[新浪API] 失败:', e.message);
+        return false;
+    }
+}
+
+// ═══════════════════════════════════════════════════
+//  数据源3：东方财富（NDX ETF 513100 估算NDX PE）
+// ═══════════════════════════════════════════════════
+async function fetchEMPE() {
+    try {
+        const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=1.513100&fields=f57,f58,f162,f167&cb=_em${Date.now()}`;
+        const resp = await fetch(url, { cache: 'no-cache' });
+        const text = await resp.text();
+        const m = text.match(/_em\d+\(({.*?})\)/);
+        if (m) {
+            const data = JSON.parse(m[1]);
+            if (data.data && data.data.f162) {
+                let pe = parseFloat(data.data.f162);
+                if (pe > 1000) pe = pe / 100;
+                if (pe > 5 && pe < 200) STATE.peTTM = pe;
+            }
+        }
+    } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════
+//  五因子评分引擎
+// ═══════════════════════════════════════════════════
+function calcFactors() {
+    const { ndxPrice, ndxPrev, ndxATH, vix, peTTM, pe5yAvg } = STATE;
+
+    // --- 估值因子（PE越低分越高）---
+    // PE 25以下=90分, 30=70分, 35=50分, 40=30分
+    const peFactor = Math.max(10, Math.min(95, 90 - (peTTM - 25) * 4));
+    const sValuation = Math.round(peFactor);
+
+    // --- 情绪因子（VIX越高越好买，分越高）---
+    // VIX < 15=20分, 20=40分, 25=55分, 30=70分, 35=78分, 40=85分, 50=92分, 60+=97分
+    let sSentiment;
+    if (vix < 15)      sSentiment = 20;
+    else if (vix < 20) sSentiment = 20 + (vix - 15) / 5 * 20;
+    else if (vix < 25) sSentiment = 40 + (vix - 20) / 5 * 15;
+    else if (vix < 30) sSentiment = 55 + (vix - 25) / 5 * 15;
+    else if (vix < 35) sSentiment = 70 + (vix - 30) / 5 * 8;
+    else if (vix < 40) sSentiment = 78 + (vix - 35) / 5 * 7;
+    else if (vix < 50) sSentiment = 85 + (vix - 40) / 10 * 7;
+    else               sSentiment = Math.min(97, 92 + (vix - 50) / 10 * 5);
+    sSentiment = Math.round(sSentiment);
+
+    // --- 趋势因子（基于与ATH回撤）---
+    const drawdownPct = (ndxATH - ndxPrice) / ndxATH * 100;
+    // 回撤0%=50分, 5%=55分, 10%=62分, 15%=68分, 20%=74分, 25%=80分, 30%+=85分
+    let sTrend = Math.round(Math.min(88, 50 + drawdownPct * 1.3));
+
+    // --- 宏观因子（相对稳定，基于基准值）---
+    // 利率4.5%环境下基准63分，后续可接入实时数据
+    const sMacro = 63;
+
+    // --- 回撤因子（回撤越深越好买）---
+    // 0%=40分, 5%=52分, 10%=65分, 15%=75分, 20%=83分, 25%=90分, 30%+=95分
+    let sDrawdown = Math.round(Math.min(96, 40 + drawdownPct * 1.85));
+
+    // --- 综合得分（加权平均）---
+    const weights = [0.25, 0.25, 0.2, 0.15, 0.15];
+    const scores = [sValuation, sSentiment, sTrend, sMacro, sDrawdown];
+    const sTotal = Math.round(scores.reduce((s, v, i) => s + v * weights[i], 0));
+
+    return { sTotal, sValuation, sSentiment, sTrend, sMacro, sDrawdown, drawdownPct };
+}
+
+// ═══════════════════════════════════════════════════
+//  更新UI
+// ═══════════════════════════════════════════════════
+function renderAll() {
+    const { ndxPrice, ndxPrev, ndxHigh, ndxLow, ndxATH, vix, peTTM, pe5yAvg } = STATE;
+
+    // ── 价格区 ──
+    const change = ndxPrice - ndxPrev;
+    const changePct = ndxPrev > 0 ? change / ndxPrev * 100 : 0;
+    const isDown = change <= 0;
+
+    const priceEl = document.getElementById('ndx-price');
+    priceEl.textContent = ndxPrice.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+    priceEl.classList.remove('flash');
+    void priceEl.offsetWidth;
+    priceEl.classList.add('flash');
+
+    const changeEl = document.getElementById('ndx-delta');
+    changeEl.textContent = `${isDown ? '▼' : '▲'} ${Math.abs(change).toFixed(3)} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)`;
+    changeEl.className = isDown ? 'down-color' : 'up-color';
+
+    // 副标题数据
+    const drawdownPct = (ndxATH - ndxPrice) / ndxATH * 100;
+    const metaItems = document.querySelectorAll('.sub-meta-item span');
+    if (metaItems[0]) metaItems[0].textContent = peTTM.toFixed(2);
+    if (metaItems[2]) {
+        metaItems[2].textContent = `↓${drawdownPct.toFixed(2)}%`;
+        metaItems[2].className = 'down-color';
+    }
+    if (metaItems[3]) {
+        const now = new Date();
+        metaItems[3].textContent = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+    }
+
+    // ── VIX 实时 ──
+    document.getElementById('vix-live').textContent = vix.toFixed(2);
+
+    // VIX 级别高亮
+    const vixRows = document.querySelectorAll('.vix-row');
+    vixRows.forEach(r => r.classList.remove('active-row'));
+    let activeRow;
+    if (vix >= 60)      activeRow = vixRows[5];
+    else if (vix >= 40) activeRow = vixRows[4];
+    else if (vix >= 30) activeRow = vixRows[3];
+    else if (vix >= 20) activeRow = vixRows[2];
+    else if (vix >= 15) activeRow = vixRows[1];
+    else                activeRow = vixRows[0];
+    if (activeRow) activeRow.classList.add('active-row');
+
+    // PE
+    document.getElementById('pe-ttm').textContent = peTTM.toFixed(2);
+
+    // ── 五因子计算 ──
+    const f = calcFactors();
+
+    // 仪表盘指针
+    const deg = -90 + f.sTotal * 1.8;
+    document.getElementById('needle-group').setAttribute('transform', `rotate(${deg} 100 100)`);
+
+    // SVG 分数文字
+    const scoreTextEl = document.querySelector('.dial-svg text[fill="#fbbf24"]');
+    if (scoreTextEl) scoreTextEl.textContent = f.sTotal;
+
+    // 分数数字
+    setScore('s-total',    f.sTotal);
+    setScore('s-pe',       f.sValuation);
+    setScore('s-vix',      f.sSentiment);
+    setScore('s-trend',    f.sTrend);
+    setScore('s-macro',    f.sMacro);
+    setScore('s-drawdown', f.sDrawdown);
+
+    // 仪表条
+    setGauge('gauge-pe',       f.sValuation);
+    setGauge('gauge-vix',      f.sSentiment);
+    setGauge('gauge-trend',    f.sTrend);
+    setGauge('gauge-macro',    f.sMacro);
+    setGauge('gauge-drawdown', f.sDrawdown);
+
+    // 回撤进度条（动态显示历史分位估算）
+    const pct1y = Math.max(1, Math.round(drawdownPct * 0.5));
+    const pct5y = Math.max(5, Math.round(drawdownPct * 2.2));
+    const pct10y = Math.max(15, Math.round(drawdownPct * 4.0));
+    updateProg(0, Math.min(pct1y, 99));
+    updateProg(1, Math.min(pct5y, 99));
+    updateProg(2, Math.min(pct10y, 99));
+
+    // 综合评级文字
+    updateRating(f.sTotal);
+
+    // 状态指示
+    document.getElementById('data-status').textContent = STATE.apiOk ? '实时数据' : '参考数据';
+    document.getElementById('data-status').style.color = STATE.apiOk ? '#4ade80' : '#fb923c';
+}
+
+function setScore(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+}
+
+function setGauge(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.style.left = `${Math.min(val, 99)}%`;
+}
+
+function updateProg(idx, pct) {
+    const items = document.querySelectorAll('.prog-item');
+    if (!items[idx]) return;
+    const fill = items[idx].querySelector('.prog-fill');
+    const val  = items[idx].querySelector('.prog-val');
+    if (fill) fill.style.width = `${pct}%`;
+    if (val)  val.textContent  = `${pct}%`;
+}
+
+function updateRating(score) {
+    const items = document.querySelectorAll('.sum-item');
+    if (items[1]) {
+        const el = items[1].querySelector('.sv');
+        if (!el) return;
+        let rating, color;
+        if (score >= 85)      { rating = '极度低估'; color = '#4ade80'; }
+        else if (score >= 75) { rating = '偏低估';   color = '#86efac'; }
+        else if (score >= 65) { rating = '中性偏积极'; color = '#fbbf24'; }
+        else if (score >= 50) { rating = '中性';     color = '#94a3b8'; }
+        else if (score >= 35) { rating = '偏高估';   color = '#fb923c'; }
+        else                  { rating = '高估区间';  color = '#f87171'; }
+        el.textContent = rating;
+        el.style.color = color;
+    }
+    if (items[2]) {
+        const el = items[2].querySelector('.sv');
+        if (!el) return;
+        let mult;
+        if (score >= 85)      mult = '2.0×';
+        else if (score >= 75) mult = '1.5×';
+        else if (score >= 65) mult = '1.2×';
+        else if (score >= 50) mult = '1.0×';
+        else if (score >= 35) mult = '0.8×';
+        else                  mult = '0.5×';
+        el.textContent = mult;
+    }
+    if (items[3]) {
+        const el = items[3].querySelector('.sv');
+        if (!el) return;
+        const ddPct = (STATE.ndxATH - STATE.ndxPrice) / STATE.ndxATH * 100;
+        let status;
+        if      (ddPct > 25) status = '深度回撤';
+        else if (ddPct > 15) status = '技术性修正';
+        else if (ddPct > 8)  status = '小幅回调';
+        else if (ddPct > 3)  status = '高位震荡';
+        else                 status = '历史高位';
+        el.textContent = status;
+        const ssEl = items[3].querySelector('.ss');
+        if (ssEl) ssEl.textContent = `↓ ${ddPct.toFixed(2)}% from ATH`;
+    }
+}
+
+// ═══════════════════════════════════════════════════
+//  迷你趋势图（初始化一次）
+// ═══════════════════════════════════════════════════
+function initTrendChart() {
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    const trendData = [21200,21800,22100,22800,23500,24200,25100,25800,26100,25400,24600,23800,23200,STATE.ndxPrice];
+    const grad = ctx.createLinearGradient(0,0,0,90);
+    grad.addColorStop(0,'rgba(79,172,254,0.35)');
+    grad.addColorStop(1,'rgba(79,172,254,0)');
+    STATE.trendChart = new Chart(ctx, {
+        type:'line',
+        data:{
+            labels: trendData.map((_,i) => i),
+            datasets:[{
+                data: trendData,
+                borderColor:'#4facfe',
+                backgroundColor: grad,
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4,
+                pointRadius: 0,
+            }]
+        },
+        options:{
+            responsive:true, maintainAspectRatio:false,
+            plugins:{ legend:{display:false}, tooltip:{enabled:false} },
+            scales:{ x:{display:false}, y:{display:false, min:20000, max:27000} },
+            animation:{ duration:800 }
+        }
+    });
+}
+
+// ═══════════════════════════════════════════════════
+//  AI 报告（基于实时数据动态生成）
+// ═══════════════════════════════════════════════════
+function generateAIContent() {
+    const { ndxPrice, ndxPrev, ndxATH, vix, peTTM, pe5yAvg } = STATE;
+    const f = calcFactors();
+    const changePct = ((ndxPrice - ndxPrev) / ndxPrev * 100).toFixed(2);
+    const isDown = ndxPrice < ndxPrev;
+    const ddPct = f.drawdownPct.toFixed(2);
+
+    let vixLevel, vixOp;
+    if      (vix >= 60) { vixLevel = '极度恐慌'; vixOp = '极佳买入时机，可考虑大幅加仓'; }
+    else if (vix >= 40) { vixLevel = '罕见恐慌'; vixOp = '历史级别买入窗口，建议积极加仓'; }
+    else if (vix >= 30) { vixLevel = '剧烈波动'; vixOp = '市场恐慌情绪浓厚，逢低布局的好时机'; }
+    else if (vix >= 20) { vixLevel = '开始紧张'; vixOp = '保持定投节奏，关注进一步下跌机会'; }
+    else if (vix >= 15) { vixLevel = '正常波动'; vixOp = '市场较为平稳，按既定计划定投'; }
+    else                { vixLevel = '市场平静'; vixOp = '波动极低，市场情绪乐观，谨慎追高'; }
+
+    let peAssess;
+    if      (peTTM < 25) peAssess = `当前 PE TTM 仅 ${peTTM.toFixed(2)}，低于5年均值 ${pe5yAvg}，估值具备安全边际。`;
+    else if (peTTM < 30) peAssess = `当前 PE TTM 为 ${peTTM.toFixed(2)}，接近5年均值 ${pe5yAvg}，估值处于合理区间。`;
+    else if (peTTM < 35) peAssess = `当前 PE TTM 达 ${peTTM.toFixed(2)}，高于5年均值 ${pe5yAvg}，估值偏贵，安全边际较低。`;
+    else                  peAssess = `当前 PE TTM 高达 ${peTTM.toFixed(2)}，远超5年均值 ${pe5yAvg}，估值处于历史高位。`;
+
+    let recommendation;
+    if      (f.sTotal >= 85) recommendation = `模型建议采用 <span class="green">2.0 倍</span>强力加仓策略，这是历史级别的买入机会。`;
+    else if (f.sTotal >= 75) recommendation = `模型建议采用 <span class="green">1.5 倍</span>积极定投策略，积极布局。`;
+    else if (f.sTotal >= 65) recommendation = `模型建议采用 <span class="green">1.2 倍</span>定投策略，逐步布局。`;
+    else if (f.sTotal >= 50) recommendation = `模型建议维持 <span class="val-yellow">1.0 倍</span>正常定投节奏，观望为主。`;
+    else                      recommendation = `模型建议减至 <span class="val-red">0.8 倍</span>保守定投，等待更好机会。`;
+
+    return `当前 NDX 指数报 <strong>${ndxPrice.toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3})}</strong>，${isDown ? '下跌' : '上涨'} ${Math.abs(changePct)}%，较历史高点 ${ndxATH.toLocaleString('en-US')} 已回撤 <span class="val-red">${ddPct}%</span>。
+
+<strong>五因子综合评分 ${f.sTotal} 分</strong>，${recommendation}
+
+• <strong>估值因子（${f.sValuation}分）：</strong>${peAssess}关注 PE 回归 30 以下的性价比窗口。
+
+• <strong>情绪因子（${f.sSentiment}分）：</strong>VIX 恐慌指数当前 <span class="val-red">${vix.toFixed(2)}</span>，处于"${vixLevel}"区间。${vixOp}。历史经验：25年4月大跌时 VIX 曾飙升至 60.13。
+
+• <strong>趋势因子（${f.sTrend}分）：</strong>${ddPct > 10 ? '指数已进入技术性修正区间，短期趋势偏弱' : ddPct > 5 ? '指数处于小幅回调阶段，趋势中性' : '指数趋势较强，高位震荡'}，${ddPct > 8 ? '下行动能有所减弱，关注企稳信号' : '需防范进一步回调风险'}。
+
+• <strong>宏观因子（${f.sMacro}分）：</strong>美联储维持 4.5% 利率，PCE 通胀 2.5% 温和，宏观环境${f.sMacro >= 65 ? '中性偏稳' : '存在一定压力'}。关注美联储降息时间窗口。
+
+• <strong>回撤因子（${f.sDrawdown}分）：</strong>当前距历史高点回撤 <span class="val-green">${ddPct}%</span>，${f.sDrawdown >= 75 ? '已进入性价比击球区间，具备较强安全垫' : f.sDrawdown >= 55 ? '安全垫适中，可适度布局' : '尚未到达理想入场区间，建议谨慎'}。
+
+<strong>综合结论：</strong>建议对 NDX 指数基金${f.sTotal >= 65 ? '保持定期定额投资节奏，并适当' + (f.sTotal >= 75 ? '大幅' : '') + '提高定投比例' : '维持正常定投节奏，暂不追加'}。重点关注 VIX 是否攀升至 40+ 的极度恐慌区间，届时可考虑进一步加仓。`;
+}
+
+let aiIdx = 0; let aiText = '';
+const aiEl = document.getElementById('ai-text');
+let aiContent = '';
+
+function startAIType(content) {
+    aiIdx = 0; aiText = '';
+    aiContent = content;
+    typeAI();
+}
+
+function typeAI() {
+    if (aiIdx < aiContent.length) {
+        let realChars = 0, htmlI = aiIdx;
+        while (htmlI < aiContent.length) {
+            if (aiContent[htmlI] === '<') {
+                const close = aiContent.indexOf('>', htmlI);
+                if (close !== -1) { aiText += aiContent.slice(htmlI, close+1); htmlI = close+1; continue; }
+            }
+            aiText += aiContent[htmlI]; realChars++; htmlI++;
+            if (realChars >= 3) break;
+        }
+        aiIdx = htmlI;
+        aiEl.innerHTML = aiText + '<span class="ai-cursor"></span>';
+        setTimeout(typeAI, 16);
+    } else {
+        aiEl.innerHTML = aiContent;
+    }
+}
+
+// ═══════════════════════════════════════════════════
+//  主刷新循环
+// ═══════════════════════════════════════════════════
+async function refreshData() {
+    document.getElementById('data-status').textContent = '获取中...';
+    // 并发请求
+    const [ok1] = await Promise.all([fetchTencent(), fetchEMPE()]);
+    if (!ok1) await fetchSina();
+    renderAll();
+    document.getElementById('last-update').textContent = new Date().toLocaleTimeString('zh-CN');
+}
+
+// ── 初始化 ──
+window.addEventListener('DOMContentLoaded', () => {
+    initTrendChart();
+    renderAll(); // 先用默认值渲染
+    setTimeout(() => {
+        startAIType(generateAIContent());
+    }, 600);
+
+    // 立即拉一次实时数据
+    refreshData().then(() => {
+        startAIType(generateAIContent());
+    });
+
+    // 每 15 秒刷新一次
+    setInterval(() => {
+        refreshData();
+    }, 15000);
+});
+</script>
+</body>
+</html>
