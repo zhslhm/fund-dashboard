@@ -577,13 +577,13 @@
 //  全局数据状态
 // ═══════════════════════════════════════════════════
 const STATE = {
-    ndxPrice: 22953.378,
-    ndxOpen:  23132.414,
-    ndxPrev:  23132.414,
-    ndxHigh:  23200.0,
-    ndxLow:   22850.0,
-    ndxATH:   26160.0,       // 历史最高点（近期高点）
-    vix:      30.61,
+    ndxPrice: 23740.19,      // 03/31 收盘价（会被API覆盖）
+    ndxOpen:  23208.00,
+    ndxPrev:  22953.38,      // 03/31 昨收
+    ndxHigh:  23789.60,
+    ndxLow:   23198.64,
+    ndxATH:   26182.10,      // 52周最高（截至2026-03-31）
+    vix:      21.65,         // 初始估算值
     peTTM:    32.09,
     pe5yAvg:  27.28,
     trendChart: null,
@@ -626,101 +626,147 @@ function jsonp(url, timeout = 8000) {
 }
 
 // ═══════════════════════════════════════════════════
-//  数据源1：腾讯股票 API（NDX + VIX）
-//  格式：v_rt_us.NDX="...~价格~开盘~最高~最低~前收..."
+//  数据源1：东方财富 - NDX 指数（代码 NDX，市场UB）
+//  这是最稳定的无CORS跨域接口
 // ═══════════════════════════════════════════════════
-async function fetchTencent() {
+async function fetchEMIndex() {
     try {
-        const symbols = 'rt_us.NDX,rt_us.VIX';
-        const url = `https://qt.gtimg.cn/q=${symbols}`;
+        // NDX100 纳斯达克100指数  secid=100.NDX100（注意：100.NDX是纳斯达克综合指数，NDX100才是纳斯达克100）
+        const ts = Date.now();
+        const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=100.NDX100&fields=f43,f44,f45,f46,f47,f57,f58,f60,f169,f170&ut=fa5fd1943c7b386f172d6893dbfba10b&_=${ts}`;
         const resp = await fetch(url, { cache: 'no-cache' });
-        const text = await resp.text();
-
-        // 解析 NDX
-        const ndxMatch = text.match(/v_rt_us\.NDX="([^"]+)"/);
-        if (ndxMatch) {
-            const parts = ndxMatch[1].split('~');
-            // parts[3]=名称, [4]=当前价, [5]=昨收, [6]=今开, [7]=成交量, [8]=最高, [9]=最低
-            const price = parseFloat(parts[4]);
-            const prev  = parseFloat(parts[5]);
-            const open  = parseFloat(parts[6]) || prev;
-            const high  = parseFloat(parts[8]) || price;
-            const low   = parseFloat(parts[9]) || price;
-            if (price > 0) {
+        const json = await resp.json();
+        if (json && json.data) {
+            const d = json.data;
+            // f43=当前价(×100), f44=最高, f45=最低, f46=今开, f60=昨收
+            const price = d.f43 !== undefined ? d.f43 / 100 : 0;
+            const high  = d.f44 !== undefined ? d.f44 / 100 : 0;
+            const low   = d.f45 !== undefined ? d.f45 / 100 : 0;
+            const open  = d.f46 !== undefined ? d.f46 / 100 : 0;
+            const prev  = d.f60 !== undefined ? d.f60 / 100 : 0;
+            if (price > 1000) {
                 STATE.ndxPrice = price;
-                STATE.ndxPrev  = prev > 0 ? prev : STATE.ndxPrev;
-                STATE.ndxOpen  = open > 0 ? open : STATE.ndxOpen;
-                STATE.ndxHigh  = high;
-                STATE.ndxLow   = low;
-                STATE.apiOk    = true;
-            }
-        }
-
-        // 解析 VIX
-        const vixMatch = text.match(/v_rt_us\.VIX="([^"]+)"/);
-        if (vixMatch) {
-            const parts = vixMatch[1].split('~');
-            const vix = parseFloat(parts[4]);
-            if (vix > 0) STATE.vix = vix;
-        }
-        return true;
-    } catch(e) {
-        console.warn('[腾讯API] 失败:', e.message);
-        return false;
-    }
-}
-
-// ═══════════════════════════════════════════════════
-//  数据源2：新浪财经（备用）
-// ═══════════════════════════════════════════════════
-async function fetchSina() {
-    try {
-        // 新浪美股接口
-        const resp = await fetch('https://hq.sinajs.cn/list=gb_$ndx,gb_$vix', { cache: 'no-cache' });
-        const text = await resp.text();
-
-        const ndxM = text.match(/gb_\$ndx="([^"]+)"/i);
-        if (ndxM) {
-            const p = ndxM[1].split(',');
-            const price = parseFloat(p[1]);
-            const prev  = parseFloat(p[2]);
-            if (price > 0) {
-                STATE.ndxPrice = price;
-                if (prev > 0) STATE.ndxPrev = prev;
+                if (prev  > 1000) STATE.ndxPrev  = prev;
+                if (open  > 1000) STATE.ndxOpen  = open;
+                if (high  > 1000) STATE.ndxHigh  = high;
+                if (low   > 1000) STATE.ndxLow   = low;
                 STATE.apiOk = true;
+                console.log('[东方财富NDX] 成功:', price);
+                return true;
             }
         }
-        const vixM = text.match(/gb_\$vix="([^"]+)"/i);
-        if (vixM) {
-            const p = vixM[1].split(',');
-            const v = parseFloat(p[1]);
-            if (v > 0) STATE.vix = v;
-        }
-        return true;
+        console.warn('[东方财富NDX] 数据异常:', JSON.stringify(json?.data));
+        return false;
     } catch(e) {
-        console.warn('[新浪API] 失败:', e.message);
+        console.warn('[东方财富NDX] 失败:', e.message);
         return false;
     }
 }
 
 // ═══════════════════════════════════════════════════
-//  数据源3：东方财富（NDX ETF 513100 估算NDX PE）
+//  数据源2：Yahoo 代理 - 同时获取 NDX100 + VIX（备用/VIX主力）
+//  NDX100 雅虎代码：^NDX，VIX 雅虎代码：^VIX
+// ═══════════════════════════════════════════════════
+async function fetchYahooProxy() {
+    try {
+        // 同时请求 NDX + VIX
+        const symbols = encodeURIComponent('^NDX,^VIX');
+        const yahooUrl = encodeURIComponent(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbols}&fields=regularMarketPrice,regularMarketPreviousClose,regularMarketOpen,regularMarketDayHigh,regularMarketDayLow`);
+        const proxyUrl = `https://api.allorigins.win/get?url=${yahooUrl}`;
+        const resp = await fetch(proxyUrl, { cache: 'no-cache' });
+        const outer = await resp.json();
+        if (outer && outer.contents) {
+            const data = JSON.parse(outer.contents);
+            const results = data?.quoteResponse?.result || [];
+            for (const item of results) {
+                if (item.symbol === '^NDX') {
+                    const price = item.regularMarketPrice;
+                    const prev  = item.regularMarketPreviousClose;
+                    if (price > 1000) {
+                        STATE.ndxPrice = price;
+                        if (prev > 1000) STATE.ndxPrev = prev;
+                        if (item.regularMarketOpen  > 0) STATE.ndxOpen = item.regularMarketOpen;
+                        if (item.regularMarketDayHigh > 0) STATE.ndxHigh = item.regularMarketDayHigh;
+                        if (item.regularMarketDayLow  > 0) STATE.ndxLow  = item.regularMarketDayLow;
+                        STATE.apiOk = true;
+                        console.log('[Yahoo ^NDX] 成功:', price);
+                    }
+                }
+                if (item.symbol === '^VIX') {
+                    const vix = item.regularMarketPrice;
+                    if (vix > 0 && vix < 200) {
+                        STATE.vix = vix;
+                        console.log('[Yahoo ^VIX] 成功:', vix);
+                    }
+                }
+            }
+            return STATE.apiOk;
+        }
+        return false;
+    } catch(e) {
+        console.warn('[Yahoo代理] 失败:', e.message);
+        return false;
+    }
+}
+
+// ═══════════════════════════════════════════════════
+//  数据源3：东方财富 - NDX ETF 513100（获取PE）
 // ═══════════════════════════════════════════════════
 async function fetchEMPE() {
     try {
-        const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=1.513100&fields=f57,f58,f162,f167&cb=_em${Date.now()}`;
+        const ts = Date.now();
+        // 尝试多个字段
+        const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=1.513100&fields=f57,f58,f162,f167,f168&ut=fa5fd1943c7b386f172d6893dbfba10b&_=${ts}`;
         const resp = await fetch(url, { cache: 'no-cache' });
-        const text = await resp.text();
-        const m = text.match(/_em\d+\(({.*?})\)/);
-        if (m) {
-            const data = JSON.parse(m[1]);
-            if (data.data && data.data.f162) {
-                let pe = parseFloat(data.data.f162);
+        const json = await resp.json();
+        if (json && json.data) {
+            const d = json.data;
+            // f162 = PE(TTM)，单位可能是×100
+            let pe = d.f162;
+            if (pe && pe !== '-') {
+                pe = parseFloat(pe);
                 if (pe > 1000) pe = pe / 100;
-                if (pe > 5 && pe < 200) STATE.peTTM = pe;
+                if (pe > 5 && pe < 300) {
+                    STATE.peTTM = pe;
+                    console.log('[东方财富PE] 成功:', pe);
+                }
             }
         }
-    } catch(e) {}
+    } catch(e) {
+        console.warn('[东方财富PE] 失败:', e.message);
+    }
+}
+
+// ═══════════════════════════════════════════════════
+//  数据源4：备用 - 通过 allorigins 代理访问雅虎财经
+// ═══════════════════════════════════════════════════
+async function fetchYahooProxy() {
+    try {
+        // 使用 allorigins 公共CORS代理
+        const yahooUrl = encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/%5ENDX?interval=1m&range=1d');
+        const proxyUrl = `https://api.allorigins.win/get?url=${yahooUrl}`;
+        const resp = await fetch(proxyUrl, { cache: 'no-cache' });
+        const outer = await resp.json();
+        if (outer && outer.contents) {
+            const data = JSON.parse(outer.contents);
+            const meta = data?.chart?.result?.[0]?.meta;
+            if (meta) {
+                const price = meta.regularMarketPrice || meta.previousClose;
+                const prev  = meta.chartPreviousClose || meta.previousClose;
+                if (price > 1000) {
+                    STATE.ndxPrice = price;
+                    if (prev > 1000) STATE.ndxPrev = prev;
+                    STATE.apiOk = true;
+                    console.log('[Yahoo代理] 成功:', price);
+                    return true;
+                }
+            }
+        }
+        return false;
+    } catch(e) {
+        console.warn('[Yahoo代理] 失败:', e.message);
+        return false;
+    }
 }
 
 // ═══════════════════════════════════════════════════
@@ -929,7 +975,7 @@ function updateRating(score) {
 // ═══════════════════════════════════════════════════
 function initTrendChart() {
     const ctx = document.getElementById('trendChart').getContext('2d');
-    const trendData = [21200,21800,22100,22800,23500,24200,25100,25800,26100,25400,24600,23800,23200,STATE.ndxPrice];
+    const trendData = [20500,21200,21800,22100,22800,23500,24200,25100,25800,26182,25400,24600,23800,STATE.ndxPrice];
     const grad = ctx.createLinearGradient(0,0,0,90);
     grad.addColorStop(0,'rgba(79,172,254,0.35)');
     grad.addColorStop(1,'rgba(79,172,254,0)');
@@ -1037,10 +1083,22 @@ function typeAI() {
 //  主刷新循环
 // ═══════════════════════════════════════════════════
 async function refreshData() {
-    document.getElementById('data-status').textContent = '获取中...';
-    // 并发请求
-    const [ok1] = await Promise.all([fetchTencent(), fetchEMPE()]);
-    if (!ok1) await fetchSina();
+    const statusEl = document.getElementById('data-status');
+    statusEl.textContent = '获取中...';
+    statusEl.style.color = '#fb923c';
+
+    // 并发：东方财富取NDX100 + Yahoo代理取NDX/VIX + 东方财富取PE
+    const [ndxOk, , ] = await Promise.all([
+        fetchEMIndex(),     // NDX100 主力（东方财富）
+        fetchYahooProxy(),  // NDX+VIX（Yahoo，VIX主力）
+        fetchEMPE()         // PE（东方财富）
+    ]);
+
+    // 如果东方财富NDX失败且Yahoo也失败，标记为参考数据
+    if (!STATE.apiOk) {
+        console.warn('所有接口均失败，使用默认数据');
+    }
+
     renderAll();
     document.getElementById('last-update').textContent = new Date().toLocaleTimeString('zh-CN');
 }
