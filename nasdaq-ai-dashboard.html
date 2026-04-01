@@ -737,37 +737,8 @@ async function fetchEMPE() {
     }
 }
 
-// ═══════════════════════════════════════════════════
-//  数据源4：备用 - 通过 allorigins 代理访问雅虎财经
-// ═══════════════════════════════════════════════════
-async function fetchYahooProxy() {
-    try {
-        // 使用 allorigins 公共CORS代理
-        const yahooUrl = encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/%5ENDX?interval=1m&range=1d');
-        const proxyUrl = `https://api.allorigins.win/get?url=${yahooUrl}`;
-        const resp = await fetch(proxyUrl, { cache: 'no-cache' });
-        const outer = await resp.json();
-        if (outer && outer.contents) {
-            const data = JSON.parse(outer.contents);
-            const meta = data?.chart?.result?.[0]?.meta;
-            if (meta) {
-                const price = meta.regularMarketPrice || meta.previousClose;
-                const prev  = meta.chartPreviousClose || meta.previousClose;
-                if (price > 1000) {
-                    STATE.ndxPrice = price;
-                    if (prev > 1000) STATE.ndxPrev = prev;
-                    STATE.apiOk = true;
-                    console.log('[Yahoo代理] 成功:', price);
-                    return true;
-                }
-            }
-        }
-        return false;
-    } catch(e) {
-        console.warn('[Yahoo代理] 失败:', e.message);
-        return false;
-    }
-}
+
+
 
 // ═══════════════════════════════════════════════════
 //  五因子评分引擎
